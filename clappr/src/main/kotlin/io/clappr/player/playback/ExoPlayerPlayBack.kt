@@ -313,7 +313,8 @@ open class ExoPlayerPlayback(source: String, mimeType: String? = null, options: 
     private fun triggerErrorEvent(error: Exception?) {
         val bundle = Bundle()
         val message = error?.message ?: "Exoplayer Error"
-        bundle.putParcelable(Event.ERROR.value, ErrorInfo(message, ErrorCode.PLAYBACK_ERROR))
+        val errorExtras = Bundle().apply { putSerializable("exception", error) }
+        bundle.putParcelable(Event.ERROR.value, ErrorInfo(message, ErrorCode.PLAYBACK_ERROR, errorExtras))
         trigger(Event.ERROR.value, bundle)
     }
 
