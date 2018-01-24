@@ -101,7 +101,12 @@ enum class Event(val value: String) {
     /**
      * Media Options Selected. Data provided with the [EventData.MEDIA_OPTIONS_SELECTED_RESPONSE] key.
      */
-    MEDIA_OPTIONS_SELECTED("mediaOptionsSelected")
+    MEDIA_OPTIONS_SELECTED("mediaOptionsSelected"),
+
+    /*
+    * When drm key was loaded.
+     */
+    ON_DRM_KEYS_LOADED("onDrmKeysLoaded")
 }
 
 /**

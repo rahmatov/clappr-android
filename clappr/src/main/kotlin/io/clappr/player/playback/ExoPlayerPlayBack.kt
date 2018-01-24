@@ -8,6 +8,7 @@ import android.os.Handler
 import android.view.View
 import com.google.android.exoplayer2.*
 import com.google.android.exoplayer2.drm.*
+import com.google.android.exoplayer2.drm.DefaultDrmSessionManager.MODE_DOWNLOAD
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory
 import com.google.android.exoplayer2.source.*
 import com.google.android.exoplayer2.source.dash.DashMediaSource
@@ -31,6 +32,7 @@ import java.io.IOException
 import java.util.*
 
 open class ExoPlayerPlayback(source: String, mimeType: String? = null, options: Options = Options()) : Playback(source, mimeType, options) {
+
     companion object : PlaybackSupportInterface {
         val tag: String = "ExoPlayerPlayback"
 
@@ -70,6 +72,9 @@ open class ExoPlayerPlayback(source: String, mimeType: String? = null, options: 
         get() {
             return options.options[ClapprOption.DRM_LICENSE_URL.value] as? String
         }
+
+    private var drmSessionManager: DefaultDrmSessionManager<FrameworkMediaCrypto>? = null
+
     private val subtitlesFromOptions = options.options[ClapprOption.SUBTITLES.value] as? HashMap<String, String>
 
     private val useSubtitleFromOptions = subtitlesFromOptions?.isNotEmpty() ?: false
@@ -206,13 +211,13 @@ open class ExoPlayerPlayback(source: String, mimeType: String? = null, options: 
     }
 
     private fun setUpRendererFactory(): DefaultRenderersFactory {
-        val rendererFactory = DefaultRenderersFactory(context,
-                buildDrmSessionManager(), DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-        return rendererFactory
+        drmSessionManager = buildDrmSessionManager()
+        return DefaultRenderersFactory(context,
+                drmSessionManager, DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
     }
 
     @SuppressLint("NewApi")
-    fun buildDrmSessionManager(): DrmSessionManager<FrameworkMediaCrypto>? {
+    private fun buildDrmSessionManager(): DefaultDrmSessionManager<FrameworkMediaCrypto>? {
         if (Util.SDK_INT < 18 || drmLicenseUrl == null) {
             return null
         }
@@ -221,7 +226,11 @@ open class ExoPlayerPlayback(source: String, mimeType: String? = null, options: 
 
         val drmMediaCallback = HttpMediaDrmCallback(drmLicenseUrl, defaultHttpDataSourceFactory)
 
-        return DefaultDrmSessionManager(drmScheme, FrameworkMediaDrm.newInstance(drmScheme), drmMediaCallback, null, mainHandler, drmEventsListeners)
+        val drmSessionManager = DefaultDrmSessionManager(drmScheme, FrameworkMediaDrm.newInstance(drmScheme), drmMediaCallback, null, mainHandler, drmEventsListeners)
+
+        drmSessionManager.setMode(MODE_DOWNLOAD, null)
+
+        return drmSessionManager
     }
 
     private fun checkPeriodicUpdates() {
@@ -275,6 +284,7 @@ open class ExoPlayerPlayback(source: String, mimeType: String? = null, options: 
             currentState = State.PLAYING
             trigger(Event.PLAYING)
             timeElapsedHandler.start()
+
         } else {
             currentState = State.PAUSED
             trigger(Event.DID_PAUSE)
@@ -296,15 +306,15 @@ open class ExoPlayerPlayback(source: String, mimeType: String? = null, options: 
 
     private fun handleExoplayerIdleState() {
         timeElapsedHandler.cancel()
-        if(!recoveredFromBehindLiveWindowException) {
+        if (!recoveredFromBehindLiveWindowException) {
             currentState = State.NONE
         } else {
             recoveredFromBehindLiveWindowException = false
         }
     }
 
-    private fun trigger(event: Event) {
-        trigger(event.value)
+    private fun trigger(event: Event, bundle: Bundle = Bundle()) {
+        trigger(event.value, bundle)
     }
 
     protected fun handleError(error: Exception?) {
@@ -507,7 +517,7 @@ open class ExoPlayerPlayback(source: String, mimeType: String? = null, options: 
         }
     }
 
-    inner class ExoplayerEventsListener: ExtractorMediaSource.EventListener, ExoPlayer.EventListener {
+    inner class ExoplayerEventsListener : ExtractorMediaSource.EventListener, ExoPlayer.EventListener {
         override fun onLoadError(error: IOException?) {
             handleError(error)
         }
@@ -543,12 +553,19 @@ open class ExoPlayerPlayback(source: String, mimeType: String? = null, options: 
 
     inner class ExoplayerDrmEventsListeners : DefaultDrmSessionManager.EventListener {
         override fun onDrmKeysRestored() {
+            Logger.debug(name, "onDrmKeysRestored")
         }
 
         override fun onDrmKeysLoaded() {
+            drmSessionManager?.offlineLicenseKeySetId?.let { licenseKey ->
+                trigger(Event.ON_DRM_KEYS_LOADED, Bundle().apply {
+                    putByteArray(Event.ON_DRM_KEYS_LOADED.value, licenseKey)
+                })
+            }
         }
 
         override fun onDrmKeysRemoved() {
+            Logger.debug(name, "onDrmKeysRemoved")
         }
 
         override fun onDrmSessionManagerError(error: java.lang.Exception?) {
